@@ -1,0 +1,21 @@
+version: "3"
+services:
+  minecraft:
+    build:
+      context: .
+      args:
+        server_version: $SERVER_VERSION
+    image: robjdavey/minecraft-server:paper-hc-$SERVER_VERSION
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/London
+    ports:
+      - 25565:25565
+    volumes:
+      - world:/app/world
+      - world_nether:/app/world_nether
+      - world_the_end:/app/world_the_end
+volumes:
+  world:
+  world_nether:
+  world_the_end:

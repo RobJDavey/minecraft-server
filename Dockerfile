@@ -1,6 +1,4 @@
 FROM openjdk:14-slim
-ARG server_version
-ENV server_version ${server_version:-1.15.2}
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y \
@@ -14,6 +12,8 @@ RUN apt-get update \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/* \
     && echo eula=true > eula.txt
+ARG server_version
+ENV server_version ${server_version:-1.16.1}
 ADD https://papermc.io/api/v1/paper/${server_version}/latest/download ./paper.jar
 EXPOSE 25565
 HEALTHCHECK CMD [ "mcstatus", "localhost", "ping" ]

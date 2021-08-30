@@ -4,8 +4,8 @@ services:
     build:
       context: .
       args:
-        server_version: $SERVER_VERSION
-    image: robjdavey/minecraft-server:paper-hc-$SERVER_VERSION
+        - SERVER_VERSION=${SERVER_VERSION}
+    image: robjdavey/minecraft-server:$SERVER_VERSION
     restart: unless-stopped
     environment:
       - TZ=Europe/London

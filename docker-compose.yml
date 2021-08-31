@@ -1,11 +1,6 @@
-version: "3"
 services:
   minecraft:
-    build:
-      context: .
-      args:
-        - SERVER_VERSION=${SERVER_VERSION}
-    image: robjdavey/minecraft-server:$SERVER_VERSION
+    image: robjdavey/minecraft-server:$SERVER_VERSION-alpine
     restart: unless-stopped
     environment:
       - TZ=Europe/London

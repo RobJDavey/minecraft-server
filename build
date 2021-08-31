@@ -1,0 +1,97 @@
+#!/usr/bin/env sh
+
+recommendedJavaVersion() {
+    minor=$(echo "$1" | cut -d '.' -f 2)
+    patch=$(echo "$1" | cut -d '.' -f 3)
+    patch=${patch:-0}
+
+    if [ "$minor" -lt 12 ] 2>/dev/null; then
+        echo "8"
+    elif [ "$minor" -lt 16 ] 2>/dev/null; then
+        echo "11"
+    elif [ "$minor" -eq 16 ] && [ "$patch" -lt 5 ] 2>/dev/null; then
+        echo "11"
+    else
+        echo "16"
+    fi
+}
+
+if ! command -v curl >/dev/null; then
+    echo "curl not installed"
+    exit 1
+fi
+
+if ! command -v jq >/dev/null; then
+    echo "jq not installed"
+    exit 2
+fi
+
+if ! command -v docker >/dev/null; then
+    echo "docker not installed"
+    exit 3
+fi
+
+version_groups=$(curl "https://papermc.io/api/v2/projects/paper/" 2>/dev/null |
+    jq -c ".version_groups[]" |
+    cut -d '"' -f 2)
+
+latest_version=$(curl "https://papermc.io/api/v2/projects/paper/" 2>/dev/null |
+    jq -c ".versions[-1]" |
+    cut -d '"' -f 2)
+
+for version_group in $version_groups; do
+    versions=$(curl "https://papermc.io/api/v2/projects/paper/version_group/$version_group" 2>/dev/null |
+        jq -c ".versions[]" |
+        cut -d '"' -f 2)
+
+    latest_group_version=""
+    latest_group_version_alpine=""
+
+    for version in $versions; do
+        java_version=$(recommendedJavaVersion "$version")
+
+        build=$(curl "https://papermc.io/api/v2/projects/paper/versions/$version" 2>/dev/null |
+            jq -c '.builds[-1]')
+
+        download_name=$(curl "https://papermc.io/api/v2/projects/paper/versions/$version/builds/$build" 2>/dev/null |
+            jq -c '.downloads.application.name' |
+            cut -d '"' -f 2)
+
+        # Only build versions that don't use Java 11 as this isn't available in Alpine
+        if [ "$java_version" -ne 11 ]; then
+            docker build -f ./alpine/Dockerfile \
+                --build-arg="JAVA_VERSION=$java_version" \
+                --build-arg="PAPER_VERSION=$version" \
+                --build-arg="PAPER_BUILD=$build" \
+                --build-arg="PAPER_DOWNLOAD=$download_name" \
+                -t "robjdavey/minecraft-server:$version-alpine" \
+                ./alpine &&
+                docker push "robjdavey/minecraft-server:$version-alpine" &&
+                latest_group_version_alpine=$version
+        fi
+
+        docker build -f ./slim/Dockerfile \
+            --build-arg="JAVA_VERSION=$java_version" \
+            --build-arg="PAPER_VERSION=$version" \
+            --build-arg="PAPER_BUILD=$build" \
+            --build-arg="PAPER_DOWNLOAD=$download_name" \
+            -t "robjdavey/minecraft-server:$version" \
+            ./slim &&
+            docker push "robjdavey/minecraft-server:$version" &&
+            latest_group_version=$version
+    done
+
+    if [ -n "$latest_group_version_alpine" ]; then
+        docker tag "robjdavey/minecraft-server:$latest_group_version_alpine-alpine" "robjdavey/minecraft-server:$version_group-alpine"
+        docker push "robjdavey/minecraft-server:$version_group-alpine"
+    fi
+
+    docker tag "robjdavey/minecraft-server:$latest_group_version" "robjdavey/minecraft-server:$version_group"
+    docker push "robjdavey/minecraft-server:$version_group"
+done
+
+docker tag "robjdavey/minecraft-server:$latest_version-alpine" "robjdavey/minecraft-server:alpine"
+docker tag "robjdavey/minecraft-server:$latest_version" "robjdavey/minecraft-server:latest"
+
+docker push "robjdavey/minecraft-server:alpine"
+docker push "robjdavey/minecraft-server:latest"

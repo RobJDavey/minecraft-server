@@ -1,5 +1,10 @@
 #!/usr/bin/env sh
 
+set -euf
+
+DOCKER_COMMAND=podman
+export BUILDAH_FORMAT=docker
+
 fullVersionNumber() {
     major=$(echo "$1" | cut -d '.' -f 1)
     minor=$(echo "$1" | cut -d '.' -f 2)
@@ -13,14 +18,18 @@ recommendedJavaVersion() {
     patch=$(echo "$1" | cut -d '.' -f 3)
     patch=${patch:-0}
 
-    if [ "$minor" -lt 12 ] 2>/dev/null; then
+    if [ "$minor" = "13-pre7" ] 2>/dev/null; then
+        echo "8"
+    elif [ "$minor" -lt 12 ] 2>/dev/null; then
         echo "8"
     elif [ "$minor" -lt 16 ] 2>/dev/null; then
         echo "11"
-    elif [ "$minor" -eq 16 ] && [ "$patch" -lt 5 ] 2>/dev/null; then
+    elif [ "$minor" -eq 16 ] 2>/dev/null && [ "$patch" -ne 5 ] 2>/dev/null; then
         echo "11"
-    else
+    elif [ "$minor" -eq 16 ] 2>/dev/null && [ "$patch" -eq 5 ] 2>/dev/null; then
         echo "16"
+    else
+        echo "17"
     fi
 }
 
@@ -34,8 +43,8 @@ if ! command -v jq >/dev/null; then
     exit 2
 fi
 
-if ! command -v docker >/dev/null; then
-    echo "docker not installed"
+if ! command -v $DOCKER_COMMAND >/dev/null; then
+    echo "$DOCKER_COMMAND not installed"
     exit 3
 fi
 
@@ -53,7 +62,6 @@ for version_group in $version_groups; do
         cut -d '"' -f 2)
 
     latest_group_version=""
-    latest_group_version_alpine=""
 
     for version in $versions; do
         java_version=$(recommendedJavaVersion "$version")
@@ -66,41 +74,20 @@ for version_group in $version_groups; do
             jq -c '.downloads.application.name' |
             cut -d '"' -f 2)
 
-        # Only build versions that don't use Java 11 as this isn't available in Alpine
-        if [ "$java_version" -ne 11 ]; then
-            docker build -f ./alpine/Dockerfile \
-                --build-arg="JAVA_VERSION=$java_version" \
-                --build-arg="PAPER_VERSION=$version" \
-                --build-arg="PAPER_BUILD=$build" \
-                --build-arg="PAPER_DOWNLOAD=$download_name" \
-                -t "robjdavey/minecraft-server:$version_number-alpine" \
-                ./alpine &&
-                docker push "robjdavey/minecraft-server:$version_number-alpine" &&
-                latest_group_version_alpine=$version_number
-        fi
-
-        docker build -f ./slim/Dockerfile \
+        $DOCKER_COMMAND build -f ./slim/Dockerfile \
             --build-arg="JAVA_VERSION=$java_version" \
             --build-arg="PAPER_VERSION=$version" \
             --build-arg="PAPER_BUILD=$build" \
             --build-arg="PAPER_DOWNLOAD=$download_name" \
-            -t "robjdavey/minecraft-server:$version_number" \
+            -t "docker.io/robjdavey/minecraft-server:$version_number" \
             ./slim &&
-            docker push "robjdavey/minecraft-server:$version_number" &&
+            $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:$version_number" &&
             latest_group_version=$version_number
     done
 
-    if [ -n "$latest_group_version_alpine" ]; then
-        docker tag "robjdavey/minecraft-server:$latest_group_version_alpine-alpine" "robjdavey/minecraft-server:$version_group-alpine"
-        docker push "robjdavey/minecraft-server:$version_group-alpine"
-    fi
-
-    docker tag "robjdavey/minecraft-server:$latest_group_version" "robjdavey/minecraft-server:$version_group"
-    docker push "robjdavey/minecraft-server:$version_group"
+    $DOCKER_COMMAND tag "docker.io/robjdavey/minecraft-server:$latest_group_version" "docker.io/robjdavey/minecraft-server:$version_group"
+    $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:$version_group"
 done
 
-docker tag "robjdavey/minecraft-server:$latest_version-alpine" "robjdavey/minecraft-server:alpine"
-docker tag "robjdavey/minecraft-server:$latest_version" "robjdavey/minecraft-server:latest"
-
-docker push "robjdavey/minecraft-server:alpine"
-docker push "robjdavey/minecraft-server:latest"
+$DOCKER_COMMAND tag "docker.io/robjdavey/minecraft-server:$latest_version" "docker.io/robjdavey/minecraft-server:latest"
+$DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:latest"

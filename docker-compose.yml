@@ -1,11 +1,13 @@
 services:
   minecraft:
-    image: robjdavey/minecraft-server:$SERVER_VERSION-alpine
+    image: robjdavey/minecraft-server:$SERVER_VERSION
     restart: unless-stopped
     environment:
       - TZ=Europe/London
     ports:
       - 25565:25565
+    tty: true
+    stdin_open: true
     volumes:
       - world:/app/world
       - world_nether:/app/world_nether

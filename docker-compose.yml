@@ -8,10 +8,14 @@ services:
       - 25565:25565
     tty: true
     stdin_open: true
+    user: 25565:25565
     volumes:
-      - world:/app/world
-      - world_nether:/app/world_nether
-      - world_the_end:/app/world_the_end
+      - world:/minecraft/world
+      - world_nether:/minecraft/world_nether
+      - world_the_end:/minecraft/world_the_end
+      - ./bukkit.yml:/minecraft/bukkit.yml:rw
+      - ./server.properties:/minecraft/server.properties:rw
+      - ./spigot.yml:/minecraft/spigot.yml:rw
 volumes:
   world:
   world_nether:

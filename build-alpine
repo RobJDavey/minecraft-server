@@ -1,0 +1,83 @@
+#!/usr/bin/env sh
+
+set -euf
+
+DOCKER_COMMAND=podman
+export BUILDAH_FORMAT=docker
+
+fullVersionNumber() {
+    major=$(echo "$1" | cut -d '.' -f 1)
+    minor=$(echo "$1" | cut -d '.' -f 2)
+    patch=$(echo "$1" | cut -d '.' -f 3)
+    patch=${patch:-0}
+    echo "$major.$minor.$patch"
+}
+
+recommendedJavaVersion() {
+    minor=$(echo "$1" | cut -d '.' -f 2)
+    patch=$(echo "$1" | cut -d '.' -f 3)
+    patch=${patch:-0}
+
+    if [ "$minor" = "13-pre7" ] 2>/dev/null; then
+        echo "8"
+    elif [ "$minor" -lt 12 ] 2>/dev/null; then
+        echo "8"
+    elif [ "$minor" -lt 16 ] 2>/dev/null; then
+        echo "11"
+    elif [ "$minor" -eq 16 ] 2>/dev/null && [ "$patch" -ne 5 ] 2>/dev/null; then
+        echo "11"
+    elif [ "$minor" -eq 16 ] 2>/dev/null && [ "$patch" -eq 5 ] 2>/dev/null; then
+        echo "16"
+    else
+        echo "21"
+    fi
+}
+
+if ! command -v curl >/dev/null; then
+    echo "curl not installed"
+    exit 1
+fi
+
+if ! command -v jq >/dev/null; then
+    echo "jq not installed"
+    exit 2
+fi
+
+if ! command -v $DOCKER_COMMAND >/dev/null; then
+    echo "$DOCKER_COMMAND not installed"
+    exit 3
+fi
+
+versions=$(curl https://fill.papermc.io/v3/projects/paper/versions 2>/dev/null)
+version_numbers=$(printf '%s' "$versions" | jq -r '.versions[].version.id' | cut -d '"' -f 2)
+latest_version_number=$(printf '%s' "$versions" | jq -r '.versions[0].version.id' | cut -d '"' -f 2)
+
+printf 'Latest version is Minecraft %s\n' "$latest_version_number"
+
+for version_number in $version_numbers; do
+    version_info=$(printf '%s' "$versions" | jq ".versions | map(select(.version.id == \"$version_number\")) | .[0]")
+    java_version=$(printf '%s' "$version_info" | jq -r '.version.java.version.minimum')
+    builds=$(curl "https://fill.papermc.io/v3/projects/paper/versions/$version_number/builds" 2>/dev/null)
+    latest_stable_build=$(printf '%s' "$builds" | jq -r 'map(select(.channel == "STABLE")) | .[0]')
+    latest_stable_build_id=$(printf '%s' "$latest_stable_build" | jq -r '.id')
+    download_url=$(printf '%s' "$latest_stable_build" | jq -r '.downloads."server:default".url')
+    recommended_flags=$(printf '%s' "$version_info" | jq -r '.version.java.flags.recommended[]' | cut -d '"' -f 2 | tr '\n' ' ')
+
+    printf 'Building Minecraft %s with build %s on Java %s\n' "$version_number" "$latest_stable_build_id" "$java_version"
+
+    $DOCKER_COMMAND pull "docker.io/library/eclipse-temurin:${java_version}-alpine"
+
+    $DOCKER_COMMAND build -f ./alpine/Dockerfile \
+        --build-arg="JAVA_VERSION=$java_version" \
+        --build-arg="PAPER_VERSION=$version_number" \
+        --build-arg="PAPER_BUILD=$latest_stable_build_id" \
+        --build-arg="PAPER_ARGS=$recommended_flags" \
+        --build-arg="PAPER_URL=$download_url" \
+        -t "docker.io/robjdavey/minecraft-server:$version_number-alpine" \
+        ./alpine &&
+        $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:$version_number-alpine"
+    break
+done
+
+$DOCKER_COMMAND tag "docker.io/robjdavey/minecraft-server:$latest_version_number" "docker.io/robjdavey/minecraft-server:latest"
+$DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:latest"

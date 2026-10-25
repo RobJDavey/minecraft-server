@@ -29,7 +29,7 @@ recommendedJavaVersion() {
     elif [ "$minor" -eq 16 ] 2>/dev/null && [ "$patch" -eq 5 ] 2>/dev/null; then
         echo "16"
     else
-        echo "17"
+        echo "21"
     fi
 }
 
@@ -48,46 +48,36 @@ if ! command -v $DOCKER_COMMAND >/dev/null; then
     exit 3
 fi
 
-version_groups=$(curl "https://papermc.io/api/v2/projects/paper/" 2>/dev/null |
-    jq -c ".version_groups[]" |
-    cut -d '"' -f 2)
+versions=$(curl https://fill.papermc.io/v3/projects/paper/versions 2>/dev/null)
+version_numbers=$(printf '%s' "$versions" | jq -r '.versions[].version.id' | cut -d '"' -f 2)
+latest_version_number=$(printf '%s' "$versions" | jq -r '.versions[0].version.id' | cut -d '"' -f 2)
 
-latest_version=$(curl "https://papermc.io/api/v2/projects/paper/" 2>/dev/null |
-    jq -c ".versions[-1]" |
-    cut -d '"' -f 2)
+printf 'Latest version is Minecraft %s\n' "$latest_version_number"
 
-for version_group in $version_groups; do
-    versions=$(curl "https://papermc.io/api/v2/projects/paper/version_group/$version_group" 2>/dev/null |
-        jq -c ".versions[]" |
-        cut -d '"' -f 2)
+for version_number in $version_numbers; do
+    version_info=$(printf '%s' "$versions" | jq ".versions | map(select(.version.id == \"$version_number\")) | .[0]")
+    java_version=$(printf '%s' "$version_info" | jq -r '.version.java.version.minimum')
+    builds=$(curl "https://fill.papermc.io/v3/projects/paper/versions/$version_number/builds" 2>/dev/null)
+    latest_stable_build=$(printf '%s' "$builds" | jq -r 'map(select(.channel == "STABLE")) | .[0]')
+    latest_stable_build_id=$(printf '%s' "$latest_stable_build" | jq -r '.id')
+    download_url=$(printf '%s' "$latest_stable_build" | jq -r '.downloads."server:default".url')
+    recommended_flags=$(printf '%s' "$version_info" | jq -r '.version.java.flags.recommended[]' | cut -d '"' -f 2 | tr '\n' ' ')
 
-    latest_group_version=""
+    printf 'Building Minecraft %s with build %s on Java %s\n' "$version_number" "$latest_stable_build_id" "$java_version"
 
-    for version in $versions; do
-        java_version=$(recommendedJavaVersion "$version")
-        version_number=$(fullVersionNumber "$version")
+    $DOCKER_COMMAND pull "docker.io/library/eclipse-temurin:${java_version}"
 
-        build=$(curl "https://papermc.io/api/v2/projects/paper/versions/$version" 2>/dev/null |
-            jq -c '.builds[-1]')
-
-        download_name=$(curl "https://papermc.io/api/v2/projects/paper/versions/$version/builds/$build" 2>/dev/null |
-            jq -c '.downloads.application.name' |
-            cut -d '"' -f 2)
-
-        $DOCKER_COMMAND build -f ./slim/Dockerfile \
-            --build-arg="JAVA_VERSION=$java_version" \
-            --build-arg="PAPER_VERSION=$version" \
-            --build-arg="PAPER_BUILD=$build" \
-            --build-arg="PAPER_DOWNLOAD=$download_name" \
-            -t "docker.io/robjdavey/minecraft-server:$version_number" \
-            ./slim &&
-            $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:$version_number" &&
-            latest_group_version=$version_number
-    done
-
-    $DOCKER_COMMAND tag "docker.io/robjdavey/minecraft-server:$latest_group_version" "docker.io/robjdavey/minecraft-server:$version_group"
-    $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:$version_group"
+    $DOCKER_COMMAND build -f ./full/Dockerfile \
+        --build-arg="JAVA_VERSION=$java_version" \
+        --build-arg="PAPER_VERSION=$version_number" \
+        --build-arg="PAPER_BUILD=$latest_stable_build_id" \
+        --build-arg="PAPER_ARGS=$recommended_flags" \
+        --build-arg="PAPER_URL=$download_url" \
+        -t "docker.io/robjdavey/minecraft-server:$version_number" \
+        ./full &&
+        $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:$version_number"
+    break
 done
 
-$DOCKER_COMMAND tag "docker.io/robjdavey/minecraft-server:$latest_version" "docker.io/robjdavey/minecraft-server:latest"
+$DOCKER_COMMAND tag "docker.io/robjdavey/minecraft-server:$latest_version_number" "docker.io/robjdavey/minecraft-server:latest"
 $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:latest"

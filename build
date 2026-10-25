@@ -115,8 +115,9 @@ plan() {
 
 # Check the image for the given platform contains binaries for that CPU, then
 # start it with no network, wait for the server to finish starting, and check
-# it shuts down cleanly. Emulated platforms start slowly, so allow up to 5
-# minutes.
+# it shuts down cleanly. The server gets a small flat world, because generating
+# a normal spawn area takes several minutes under emulation. Emulated platforms
+# still start slowly, so allow up to 5 minutes.
 smokeTest() {
     printf 'Smoke testing %s\n' "$2"
 
@@ -132,7 +133,12 @@ smokeTest() {
         return 1
     fi
 
-    container=$($DOCKER_COMMAND run -d --pull=never --platform "$2" --network none -e MEMORY=1G "$1")
+    # The volume needs a name, because --rm deletes unnamed volumes
+    volume=$($DOCKER_COMMAND volume create "minecraft-smoke-test-$$")
+    $DOCKER_COMMAND run --rm --pull=never --platform "$2" --network none --volume "$volume:/minecraft" --entrypoint sh "$1" \
+        -c 'printf "%s\n" level-type=flat generate-structures=false view-distance=2 simulation-distance=2 > server.properties'
+
+    container=$($DOCKER_COMMAND run -d --pull=never --platform "$2" --network none -e MEMORY=1G --volume "$volume:/minecraft" "$1")
     started=false
 
     for _ in $(seq 300); do
@@ -149,6 +155,7 @@ smokeTest() {
     $DOCKER_COMMAND stop -t 60 "$container" >/dev/null
     logs=$($DOCKER_COMMAND logs "$container" 2>&1)
     $DOCKER_COMMAND rm -v "$container" >/dev/null
+    $DOCKER_COMMAND volume rm "$volume" >/dev/null
 
     if [ "$started" != "true" ]; then
         printf '%s\n' "$logs"

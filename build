@@ -3,6 +3,7 @@
 set -euf
 
 DOCKER_COMMAND=podman
+PLATFORMS=linux/amd64,linux/arm64
 export BUILDAH_FORMAT=docker
 
 variant=${1:-full}
@@ -16,13 +17,15 @@ case "$variant" in
         ;;
 esac
 
-# Start the image with no network, wait for the server to finish starting,
-# then check it shuts down cleanly
+# Start the image for the given platform with no network, wait for the server
+# to finish starting, then check it shuts down cleanly. Emulated platforms
+# start slowly, so allow up to 5 minutes.
 smokeTest() {
-    container=$($DOCKER_COMMAND run -d --network none -e MEMORY=1G "$1")
+    printf 'Smoke testing %s\n' "$2"
+    container=$($DOCKER_COMMAND run -d --platform "$2" --network none -e MEMORY=1G "$1")
     started=false
 
-    for _ in $(seq 120); do
+    for _ in $(seq 300); do
         if $DOCKER_COMMAND logs "$container" 2>&1 | grep -q 'Done ('; then
             started=true
             break
@@ -49,7 +52,7 @@ smokeTest() {
         return 1
     fi
 
-    echo "Smoke test passed"
+    printf 'Smoke test passed on %s\n' "$2"
 }
 
 if ! command -v curl >/dev/null; then
@@ -88,7 +91,20 @@ for version_number in $version_numbers; do
 
     printf 'Building Minecraft %s with build %s on Java %s\n' "$version_number" "$latest_stable_build_id" "$java_version"
 
+    image="docker.io/robjdavey/minecraft-server:${version_number}${suffix}"
+    latest_image="docker.io/robjdavey/minecraft-server:latest${suffix}"
+
+    # Remove any local image or manifest list with this name, so the build
+    # starts a fresh manifest list instead of adding to an old one
+    if $DOCKER_COMMAND manifest exists "$image"; then
+        $DOCKER_COMMAND manifest rm "$image" >/dev/null
+    elif $DOCKER_COMMAND image exists "$image"; then
+        $DOCKER_COMMAND rmi "$image" >/dev/null
+    fi
+
     $DOCKER_COMMAND build --pull -f ./Dockerfile \
+        --platform="$PLATFORMS" \
+        --manifest="$image" \
         --build-arg="JAVA_VERSION=$java_version" \
         --build-arg="BASE_SUFFIX=$suffix" \
         --build-arg="PAPER_VERSION=$version_number" \
@@ -96,12 +112,13 @@ for version_number in $version_numbers; do
         --build-arg="PAPER_ARGS=$recommended_flags" \
         --build-arg="PAPER_URL=$download_url" \
         --build-arg="PAPER_SHA256=$download_sha256" \
-        -t "docker.io/robjdavey/minecraft-server:${version_number}${suffix}" \
         .
-    smokeTest "docker.io/robjdavey/minecraft-server:${version_number}${suffix}"
-    $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:${version_number}${suffix}"
 
-    $DOCKER_COMMAND tag "docker.io/robjdavey/minecraft-server:${version_number}${suffix}" "docker.io/robjdavey/minecraft-server:latest${suffix}"
-    $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:latest${suffix}"
+    for platform in $(printf '%s' "$PLATFORMS" | tr ',' ' '); do
+        smokeTest "$image" "$platform"
+    done
+
+    $DOCKER_COMMAND manifest push --all "$image" "docker://$image"
+    $DOCKER_COMMAND manifest push --all "$image" "docker://$latest_image"
     break
 done

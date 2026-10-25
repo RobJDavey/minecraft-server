@@ -1,7 +1,7 @@
 ARG JAVA_VERSION=25
 ARG BASE_SUFFIX=""
 
-FROM docker.io/library/eclipse-temurin:${JAVA_VERSION}${BASE_SUFFIX} AS build
+FROM --platform=$BUILDPLATFORM docker.io/library/eclipse-temurin:${JAVA_VERSION}${BASE_SUFFIX} AS build
 WORKDIR /opt/paper
 ARG PAPER_URL
 ARG PAPER_SHA256

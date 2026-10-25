@@ -16,6 +16,42 @@ case "$variant" in
         ;;
 esac
 
+# Start the image with no network, wait for the server to finish starting,
+# then check it shuts down cleanly
+smokeTest() {
+    container=$($DOCKER_COMMAND run -d --network none -e MEMORY=1G "$1")
+    started=false
+
+    for _ in $(seq 120); do
+        if $DOCKER_COMMAND logs "$container" 2>&1 | grep -q 'Done ('; then
+            started=true
+            break
+        fi
+        if [ "$($DOCKER_COMMAND inspect -f '{{.State.Running}}' "$container")" != "true" ]; then
+            break
+        fi
+        sleep 1
+    done
+
+    $DOCKER_COMMAND stop -t 60 "$container" >/dev/null
+    logs=$($DOCKER_COMMAND logs "$container" 2>&1)
+    $DOCKER_COMMAND rm -v "$container" >/dev/null
+
+    if [ "$started" != "true" ]; then
+        printf '%s\n' "$logs"
+        echo "Smoke test failed: server did not start"
+        return 1
+    fi
+
+    if ! printf '%s' "$logs" | grep -q 'Saving worlds'; then
+        printf '%s\n' "$logs"
+        echo "Smoke test failed: server did not shut down cleanly"
+        return 1
+    fi
+
+    echo "Smoke test passed"
+}
+
 if ! command -v curl >/dev/null; then
     echo "curl not installed"
     exit 1
@@ -52,9 +88,7 @@ for version_number in $version_numbers; do
 
     printf 'Building Minecraft %s with build %s on Java %s\n' "$version_number" "$latest_stable_build_id" "$java_version"
 
-    $DOCKER_COMMAND pull "docker.io/library/eclipse-temurin:${java_version}${suffix}"
-
-    $DOCKER_COMMAND build -f ./Dockerfile \
+    $DOCKER_COMMAND build --pull -f ./Dockerfile \
         --build-arg="JAVA_VERSION=$java_version" \
         --build-arg="BASE_SUFFIX=$suffix" \
         --build-arg="PAPER_VERSION=$version_number" \
@@ -64,6 +98,7 @@ for version_number in $version_numbers; do
         --build-arg="PAPER_SHA256=$download_sha256" \
         -t "docker.io/robjdavey/minecraft-server:${version_number}${suffix}" \
         .
+    smokeTest "docker.io/robjdavey/minecraft-server:${version_number}${suffix}"
     $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:${version_number}${suffix}"
 
     $DOCKER_COMMAND tag "docker.io/robjdavey/minecraft-server:${version_number}${suffix}" "docker.io/robjdavey/minecraft-server:latest${suffix}"

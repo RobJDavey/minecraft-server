@@ -99,12 +99,15 @@ plan() {
 
             tag="${version_number}-${build_id}$(variantSuffix "$variant")"
 
-            if [ "${FORCE:-false}" != "true" ] && printf '%s\n' "$existing_tags" | grep -qxF "$tag"; then
+            if [ "${FORCE:-false}" = "true" ]; then
+                printf 'Rebuilding: %s\n' "$tag" >&2
+            elif printf '%s\n' "$existing_tags" | grep -qxF "$tag"; then
                 printf 'Already published: %s\n' "$tag" >&2
                 continue
+            else
+                printf 'Needs building: %s\n' "$tag" >&2
             fi
 
-            printf 'Needs building: %s\n' "$tag" >&2
             jq -cn --arg variant "$variant" --arg version "$version_number" '{variant: $variant, version: $version}'
         done
     done | jq -cs .

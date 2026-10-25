@@ -43,7 +43,11 @@ jobs:
         id: plan
         env:
           FORCE: ${{ github.event_name == 'push' || github.event.schedule == '0 6 1 * *' || inputs.rebuild_all == true }}
+          FORCE_REASON: ${{ github.event_name == 'push' && 'the image recipe changed on master' || github.event.schedule == '0 6 1 * *' && 'monthly rebuild on fresh base images' || 'manual rebuild requested' }}
         run: |
+          if [ "$FORCE" = "true" ]; then
+            echo "Rebuilding everything: $FORCE_REASON"
+          fi
           matrix=$(./build plan)
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           printf 'Images to build: %s\n' "$(printf '%s' "$matrix" | jq length)"

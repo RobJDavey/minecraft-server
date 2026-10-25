@@ -115,8 +115,10 @@ plan() {
 
 # Check the image for the given platform contains binaries for that CPU, then
 # start it with no network, wait for the server to finish starting, and check
-# it shuts down cleanly. The server gets a small flat world, because generating
-# a normal spawn area takes several minutes under emulation. Emulated platforms
+# it shuts down cleanly. The server gets a small flat world with no Nether or
+# End, because generating normal spawn areas takes several minutes under
+# emulation. Paper's bundled spark profiler is turned off, because its
+# background profiler can crash QEMU on Alpine. Emulated platforms
 # still start slowly, so allow up to 10 minutes to start and 2 minutes to stop.
 smokeTest() {
     printf 'Smoke testing %s\n' "$2"
@@ -136,7 +138,9 @@ smokeTest() {
     # The volume needs a name, because --rm deletes unnamed volumes
     volume=$($DOCKER_COMMAND volume create "minecraft-smoke-test-$$")
     $DOCKER_COMMAND run --rm --pull=never --platform "$2" --network none --volume "$volume:/minecraft" --entrypoint sh "$1" \
-        -c 'printf "%s\n" level-type=flat generate-structures=false view-distance=2 simulation-distance=2 > server.properties'
+        -c 'printf "%s\n" level-type=flat generate-structures=false view-distance=2 simulation-distance=2 allow-nether=false > server.properties
+            printf "settings:\n  allow-end: false\n" > bukkit.yml
+            mkdir config && printf "spark:\n  enabled: false\n" > config/paper-global.yml'
 
     container=$($DOCKER_COMMAND run -d --pull=never --platform "$2" --network none -e MEMORY=1G --volume "$volume:/minecraft" "$1")
     started=false

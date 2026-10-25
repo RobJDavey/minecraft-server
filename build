@@ -5,6 +5,17 @@ set -euf
 DOCKER_COMMAND=podman
 export BUILDAH_FORMAT=docker
 
+variant=${1:-full}
+
+case "$variant" in
+    full) suffix="" ;;
+    alpine) suffix="-alpine" ;;
+    *)
+        echo "Usage: $0 [full|alpine]"
+        exit 4
+        ;;
+esac
+
 fullVersionNumber() {
     major=$(echo "$1" | cut -d '.' -f 1)
     minor=$(echo "$1" | cut -d '.' -f 2)
@@ -65,19 +76,19 @@ for version_number in $version_numbers; do
 
     printf 'Building Minecraft %s with build %s on Java %s\n' "$version_number" "$latest_stable_build_id" "$java_version"
 
-    $DOCKER_COMMAND pull "docker.io/library/eclipse-temurin:${java_version}"
+    $DOCKER_COMMAND pull "docker.io/library/eclipse-temurin:${java_version}${suffix}"
 
-    $DOCKER_COMMAND build -f ./full/Dockerfile \
+    $DOCKER_COMMAND build -f "./$variant/Dockerfile" \
         --build-arg="JAVA_VERSION=$java_version" \
         --build-arg="PAPER_VERSION=$version_number" \
         --build-arg="PAPER_BUILD=$latest_stable_build_id" \
         --build-arg="PAPER_ARGS=$recommended_flags" \
         --build-arg="PAPER_URL=$download_url" \
-        -t "docker.io/robjdavey/minecraft-server:$version_number" \
-        ./full &&
-        $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:$version_number"
+        -t "docker.io/robjdavey/minecraft-server:${version_number}${suffix}" \
+        "./$variant" &&
+        $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:${version_number}${suffix}"
     break
 done
 
-$DOCKER_COMMAND tag "docker.io/robjdavey/minecraft-server:$latest_version_number" "docker.io/robjdavey/minecraft-server:latest"
-$DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:latest"
+$DOCKER_COMMAND tag "docker.io/robjdavey/minecraft-server:${latest_version_number}${suffix}" "docker.io/robjdavey/minecraft-server:latest${suffix}"
+$DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:latest${suffix}"

@@ -54,15 +54,16 @@ for version_number in $version_numbers; do
 
     $DOCKER_COMMAND pull "docker.io/library/eclipse-temurin:${java_version}${suffix}"
 
-    $DOCKER_COMMAND build -f "./$variant/Dockerfile" \
+    $DOCKER_COMMAND build -f ./Dockerfile \
         --build-arg="JAVA_VERSION=$java_version" \
+        --build-arg="BASE_SUFFIX=$suffix" \
         --build-arg="PAPER_VERSION=$version_number" \
         --build-arg="PAPER_BUILD=$latest_stable_build_id" \
         --build-arg="PAPER_ARGS=$recommended_flags" \
         --build-arg="PAPER_URL=$download_url" \
         --build-arg="PAPER_SHA256=$download_sha256" \
         -t "docker.io/robjdavey/minecraft-server:${version_number}${suffix}" \
-        "./$variant"
+        .
     $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:${version_number}${suffix}"
 
     $DOCKER_COMMAND tag "docker.io/robjdavey/minecraft-server:${version_number}${suffix}" "docker.io/robjdavey/minecraft-server:latest${suffix}"

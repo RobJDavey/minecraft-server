@@ -2,11 +2,23 @@ name: Publish
 
 on:
   schedule:
-    # Every Monday at 06:00 UTC, to pick up new Paper builds and base image fixes
+    # Every Monday at 06:00 UTC: build only versions with a new Paper build
     - cron: '0 6 * * 1'
+    # The 1st of each month at 06:00 UTC: rebuild everything on fresh base images
+    - cron: '0 6 1 * *'
   workflow_dispatch:
+    inputs:
+      rebuild_all:
+        description: Rebuild every version, even if already published
+        type: boolean
+        default: false
   push:
     branches: [master]
+    # Changes to the image recipe rebuild everything
+    paths:
+      - Dockerfile
+      - build
+      - .github/workflows/publish.yml
 
 permissions:
   contents: read
@@ -16,15 +28,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Work out which images need building
+        id: plan
+        env:
+          FORCE: ${{ github.event_name == 'push' || github.event.schedule == '0 6 1 * *' || inputs.rebuild_all == true }}
+        run: |
+          matrix=$(./build plan)
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          printf 'Images to build: %s\n' "$(printf '%s' "$matrix" | jq length)"
+
   publish:
-    name: Publish ${{ matrix.variant }}
+    name: Publish ${{ matrix.version }} ${{ matrix.variant }}
+    needs: plan
+    if: needs.plan.outputs.matrix != '[]'
     runs-on: ubuntu-24.04
     environment: docker-hub
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        variant: [full, alpine]
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,12 +79,13 @@ jobs:
           DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           VARIANT: ${{ matrix.variant }}
+          VERSION: ${{ matrix.version }}
         run: |
           docker run --rm --privileged \
-            --env DOCKERHUB_USERNAME --env DOCKERHUB_TOKEN --env VARIANT \
+            --env DOCKERHUB_USERNAME --env DOCKERHUB_TOKEN --env VARIANT --env VERSION \
             --volume "$PWD:/src:ro" --workdir /src \
             "$PODMAN_IMAGE" \
             sh -c 'set -eu
               dnf install -y -q jq
               printf "%s" "$DOCKERHUB_TOKEN" | podman login docker.io --username "$DOCKERHUB_USERNAME" --password-stdin
-              ./build "$VARIANT"'
+              ./build "$VARIANT" "$VERSION"'

@@ -13,10 +13,14 @@ A [Minecraft Server](https://www.minecraft.net/download/server/) docker containe
 
 | Tag | Description |
 | --- | --- |
-| `latest`, `<version>` (e.g. `26.3`) | Ubuntu-based image |
-| `latest-alpine`, `<version>-alpine` (e.g. `26.3-alpine`) | Alpine-based image, smaller |
+| `latest`, `<version>` (e.g. `26.3`) | Ubuntu-based image, latest stable Paper build |
+| `<version>-<build>` (e.g. `26.3-222`) | Ubuntu-based image, a specific Paper build that never changes |
+| `latest-alpine`, `<version>-alpine` | Alpine-based image, smaller |
+| `<version>-<build>-alpine` | Alpine-based image, a specific Paper build |
 
-Each tag uses the latest stable Paper build for that Minecraft version.
+Images are published for every Minecraft version from 1.18 onwards that has a stable Paper build, for both `linux/amd64` and `linux/arm64`. Alpine images start at 1.20.5, because older Java versions have no arm64 Alpine base image.
+
+Pin a `<version>-<build>` tag to stay on an exact Paper build, or to roll back if a new build causes problems.
 
 ## How to use this image
 
@@ -63,8 +67,17 @@ Detach again with **Ctrl-P Ctrl-Q**. Pressing Ctrl-C stops the server.
 ## Building
 
 ``` shell
-./build          # Ubuntu-based image
-./build alpine   # Alpine-based image
+./build                 # Ubuntu-based image for the newest Minecraft version
+./build alpine          # Alpine-based image for the newest Minecraft version
+./build full 1.20.6     # Ubuntu-based image for a specific version
+./build plan            # List the images whose Paper build isn't published yet
 ```
 
-The build needs `podman`, `curl` and `jq`. It looks up the newest Minecraft version with a stable Paper build, builds the image, and checks the jar against Paper's published checksum. Before pushing, it smoke-tests the image: it starts the server with no network and checks that it starts and shuts down cleanly.
+The build needs `podman`, `curl` and `jq`. It checks the jar against Paper's published checksum. Before pushing, it smoke-tests the image for each platform: it starts the server with no network and checks that it starts and shuts down cleanly.
+
+GitHub Actions publishes the images:
+
+- **Every Monday:** builds only the images whose `<version>-<build>` tag isn't on Docker Hub yet.
+- **On the 1st of each month:** rebuilds everything on fresh base images.
+- **On changes to the `Dockerfile`, `build` or the workflow:** rebuilds everything.
+- **Manually:** use **Run workflow** in the Actions tab, optionally with **Rebuild every version** ticked.

@@ -1,7 +1,9 @@
 ARG JAVA_VERSION=25
 ARG BASE_SUFFIX=""
+# A mirror of the Docker Hub official images, without Docker Hub's pull limits
+ARG BASE_REGISTRY=public.ecr.aws/docker/library
 
-FROM --platform=$BUILDPLATFORM docker.io/library/eclipse-temurin:${JAVA_VERSION}${BASE_SUFFIX} AS build
+FROM --platform=$BUILDPLATFORM ${BASE_REGISTRY}/eclipse-temurin:${JAVA_VERSION}${BASE_SUFFIX} AS build
 WORKDIR /opt/paper
 ARG PAPER_URL
 ARG PAPER_SHA256
@@ -20,7 +22,7 @@ RUN java -DbundlerRepoDir=/opt/paper -Dpaperclip.patchonly=true -jar paper.jar \
     && main_class=$(sed -n 's/^Main-Class: //p' META-INF/MANIFEST.MF | tr -d '\r') \
     && printf -- '-cp %s\n%s\n' "$class_path" "$main_class" > /opt/paper/server.args
 
-FROM docker.io/library/eclipse-temurin:${JAVA_VERSION}-jre${BASE_SUFFIX}
+FROM ${BASE_REGISTRY}/eclipse-temurin:${JAVA_VERSION}-jre${BASE_SUFFIX}
 ARG GROUP_NAME=minecraft
 ARG GROUP_ID=25565
 ARG USER_NAME=minecraft

@@ -4,18 +4,108 @@ set -euf
 
 DOCKER_COMMAND=${DOCKER_COMMAND:-podman}
 PLATFORMS=${PLATFORMS:-linux/amd64,linux/arm64}
+REPOSITORY=docker.io/robjdavey/minecraft-server
+HUB_TAGS_URL=https://hub.docker.com/v2/namespaces/robjdavey/repositories/minecraft-server/tags
+PAPER_API=https://fill.papermc.io/v3/projects/paper
+# Paper versions before 1.18 (Java 17) use an older Paperclip format that the
+# Dockerfile doesn't support yet
+MIN_JAVA_VERSION=17
+# The Alpine base images only support arm64 from Java 21
+MIN_ALPINE_JAVA_VERSION=21
 export BUILDAH_FORMAT=docker
 
-variant=${1:-full}
+usage() {
+    echo "Usage: $0 [full|alpine] [version]"
+    echo "       $0 plan"
+    exit 4
+}
 
-case "$variant" in
-    full) suffix="" ;;
-    alpine) suffix="-alpine" ;;
-    *)
-        echo "Usage: $0 [full|alpine]"
-        exit 4
-        ;;
-esac
+requireCommand() {
+    if ! command -v "$1" >/dev/null; then
+        echo "$1 not installed"
+        exit "$2"
+    fi
+}
+
+variantSuffix() {
+    case "$1" in
+        full) echo "" ;;
+        alpine) echo "-alpine" ;;
+        *) usage ;;
+    esac
+}
+
+variantSupported() {
+    [ "$1" != "alpine" ] || [ "$2" -ge "$MIN_ALPINE_JAVA_VERSION" ]
+}
+
+javaVersion() {
+    printf '%s' "$versions" | jq -r --arg v "$1" 'first(.versions[] | select(.version.id == $v)) | .version.java.version.minimum'
+}
+
+latestStableBuild() {
+    curl -fsSL "$PAPER_API/versions/$1/builds" | jq -c 'map(select(.channel == "STABLE")) | first // empty'
+}
+
+# Print "version build java" for each version that has a stable build and a
+# supported Java version, newest first. With "first", stop after the newest.
+buildableVersions() {
+    for version_number in $(printf '%s' "$versions" | jq -r '.versions[].version.id'); do
+        java_version=$(javaVersion "$version_number")
+
+        if [ "$java_version" -lt "$MIN_JAVA_VERSION" ]; then
+            continue
+        fi
+
+        build_id=$(latestStableBuild "$version_number" | jq -r '.id // empty')
+
+        if [ -z "$build_id" ]; then
+            continue
+        fi
+
+        printf '%s %s %s\n' "$version_number" "$build_id" "$java_version"
+
+        if [ "${1:-}" = "first" ]; then
+            break
+        fi
+    done
+}
+
+hubTags() {
+    url="$HUB_TAGS_URL?page_size=100"
+
+    while [ -n "$url" ] && [ "$url" != "null" ]; do
+        page=$(curl -fsSL "$url")
+        printf '%s' "$page" | jq -r '.results[].name'
+        url=$(printf '%s' "$page" | jq -r '.next')
+    done
+}
+
+# Print a JSON list of the images that need building. An image needs building
+# when its version-build tag (e.g. 1.21.10-130) isn't on Docker Hub yet, or
+# always when FORCE is true.
+plan() {
+    existing_tags=$(hubTags)
+    buildable_versions=$(buildableVersions)
+
+    printf '%s\n' "$buildable_versions" | while read -r version_number build_id java_version; do
+        for variant in full alpine; do
+            if ! variantSupported "$variant" "$java_version"; then
+                continue
+            fi
+
+            tag="${version_number}-${build_id}$(variantSuffix "$variant")"
+
+            if [ "${FORCE:-false}" != "true" ] && printf '%s\n' "$existing_tags" | grep -qxF "$tag"; then
+                printf 'Already published: %s\n' "$tag" >&2
+                continue
+            fi
+
+            printf 'Needs building: %s\n' "$tag" >&2
+            jq -cn --arg variant "$variant" --arg version "$version_number" '{variant: $variant, version: $version}'
+        done
+    done | jq -cs .
+}
 
 # Check the image for the given platform contains binaries for that CPU, then
 # start it with no network, wait for the server to finish starting, and check
@@ -29,14 +119,14 @@ smokeTest() {
         linux/arm64) expected_arch=aarch64 ;;
         *) expected_arch=unknown ;;
     esac
-    actual_arch=$($DOCKER_COMMAND run --rm --platform "$2" --network none --entrypoint uname "$1" -m)
+    actual_arch=$($DOCKER_COMMAND run --rm --pull=never --platform "$2" --network none --entrypoint uname "$1" -m)
 
     if [ "$actual_arch" != "$expected_arch" ]; then
         echo "Smoke test failed: $2 image contains $actual_arch binaries"
         return 1
     fi
 
-    container=$($DOCKER_COMMAND run -d --platform "$2" --network none -e MEMORY=1G "$1")
+    container=$($DOCKER_COMMAND run -d --pull=never --platform "$2" --network none -e MEMORY=1G "$1")
     started=false
 
     for _ in $(seq 300); do
@@ -69,44 +159,45 @@ smokeTest() {
     printf 'Smoke test passed on %s\n' "$2"
 }
 
-if ! command -v curl >/dev/null; then
-    echo "curl not installed"
-    exit 1
-fi
+# Build, smoke test and push one version of one variant. The version-build tag
+# is pushed last, so a failed run is retried by the next plan.
+build() {
+    variant=$1
+    suffix=$(variantSuffix "$variant")
+    latest_version_number=$(buildableVersions first | cut -d ' ' -f 1)
+    version_number=${2:-$latest_version_number}
+    java_version=$(javaVersion "$version_number")
 
-if ! command -v jq >/dev/null; then
-    echo "jq not installed"
-    exit 2
-fi
-
-if ! command -v $DOCKER_COMMAND >/dev/null; then
-    echo "$DOCKER_COMMAND not installed"
-    exit 3
-fi
-
-versions=$(curl -fsSL https://fill.papermc.io/v3/projects/paper/versions)
-version_numbers=$(printf '%s' "$versions" | jq -r '.versions[].version.id')
-
-for version_number in $version_numbers; do
-    builds=$(curl -fsSL "https://fill.papermc.io/v3/projects/paper/versions/$version_number/builds")
-    latest_stable_build=$(printf '%s' "$builds" | jq -c 'map(select(.channel == "STABLE")) | first // empty')
-
-    if [ -z "$latest_stable_build" ]; then
-        printf 'Skipping Minecraft %s: no stable build\n' "$version_number"
-        continue
+    if [ -z "$java_version" ] || [ "$java_version" = "null" ]; then
+        echo "Unknown Minecraft version: $version_number"
+        exit 5
     fi
 
-    version_info=$(printf '%s' "$versions" | jq --arg v "$version_number" 'first(.versions[] | select(.version.id == $v))')
-    java_version=$(printf '%s' "$version_info" | jq -r '.version.java.version.minimum')
+    if [ "$java_version" -lt "$MIN_JAVA_VERSION" ]; then
+        echo "Minecraft $version_number needs Java $java_version, older than the minimum of $MIN_JAVA_VERSION"
+        exit 5
+    fi
+
+    if ! variantSupported "$variant" "$java_version"; then
+        echo "The $variant variant needs Java $MIN_ALPINE_JAVA_VERSION or newer, but Minecraft $version_number uses Java $java_version"
+        exit 5
+    fi
+
+    latest_stable_build=$(latestStableBuild "$version_number")
+
+    if [ -z "$latest_stable_build" ]; then
+        echo "Minecraft $version_number has no stable build"
+        exit 5
+    fi
+
     latest_stable_build_id=$(printf '%s' "$latest_stable_build" | jq -r '.id')
     download_url=$(printf '%s' "$latest_stable_build" | jq -r '.downloads."server:default".url')
     download_sha256=$(printf '%s' "$latest_stable_build" | jq -r '.downloads."server:default".checksums.sha256')
-    recommended_flags=$(printf '%s' "$version_info" | jq -r '.version.java.flags.recommended | join(" ")')
+    recommended_flags=$(printf '%s' "$versions" | jq -r --arg v "$version_number" 'first(.versions[] | select(.version.id == $v)) | .version.java.flags.recommended | join(" ")')
 
     printf 'Building Minecraft %s with build %s on Java %s\n' "$version_number" "$latest_stable_build_id" "$java_version"
 
-    image="docker.io/robjdavey/minecraft-server:${version_number}${suffix}"
-    latest_image="docker.io/robjdavey/minecraft-server:latest${suffix}"
+    image="$REPOSITORY:${version_number}${suffix}"
 
     # Remove any local image or manifest list with this name, so the build
     # starts a fresh manifest list instead of adding to an old one
@@ -133,6 +224,28 @@ for version_number in $version_numbers; do
     done
 
     $DOCKER_COMMAND manifest push --all "$image" "docker://$image"
-    $DOCKER_COMMAND manifest push --all "$image" "docker://$latest_image"
-    break
-done
+
+    if [ "$version_number" = "$latest_version_number" ]; then
+        $DOCKER_COMMAND manifest push --all "$image" "docker://$REPOSITORY:latest${suffix}"
+    fi
+
+    $DOCKER_COMMAND manifest push --all "$image" "docker://$REPOSITORY:${version_number}-${latest_stable_build_id}${suffix}"
+}
+
+requireCommand curl 1
+requireCommand jq 2
+
+versions=$(curl -fsSL "$PAPER_API/versions")
+
+case "${1:-full}" in
+    plan)
+        plan
+        ;;
+    full | alpine)
+        requireCommand "$DOCKER_COMMAND" 3
+        build "${1:-full}" "${2:-}"
+        ;;
+    *)
+        usage
+        ;;
+esac

@@ -13,17 +13,18 @@ RUN if command -v useradd >/dev/null; then \
         && adduser -D -G ${GROUP_NAME} -u ${USER_ID} ${USER_NAME}; \
     fi
 USER ${USER_ID}:${GROUP_ID}
-WORKDIR /minecraft
+WORKDIR /opt/paper
 ARG PAPER_URL
 ARG PAPER_SHA256
 ADD --checksum=sha256:${PAPER_SHA256} --chown=${USER_ID}:${GROUP_ID} ${PAPER_URL} paper.jar
-RUN java -jar paper.jar nogui \
-    && echo eula=true > eula.txt
+RUN java -DbundlerRepoDir=/opt/paper -Dpaperclip.patchonly=true -jar paper.jar
+WORKDIR /minecraft
+VOLUME /minecraft
 EXPOSE 25565
 ARG PAPER_ARGS
 ENV PAPER_ARGS=${PAPER_ARGS}
 ENV MEMORY=2048M
-ENTRYPOINT exec java -Xms${MEMORY} -Xmx${MEMORY} $PAPER_ARGS -jar paper.jar nogui
+ENTRYPOINT exec java -Xms${MEMORY} -Xmx${MEMORY} $PAPER_ARGS -DbundlerRepoDir=/opt/paper -Dcom.mojang.eula.agree=true -jar /opt/paper/paper.jar nogui
 
 ARG PAPER_BUILD
 LABEL com.robjdavey.minecraft.server.build="${PAPER_BUILD}"

@@ -11,13 +11,6 @@ services:
     stdin_open: true
     user: 25565:25565
     volumes:
-      - world:/minecraft/world
-      - world_nether:/minecraft/world_nether
-      - world_the_end:/minecraft/world_the_end
-      - ./bukkit.yml:/minecraft/bukkit.yml:rw
-      - ./server.properties:/minecraft/server.properties:rw
-      - ./spigot.yml:/minecraft/spigot.yml:rw
+      - data:/minecraft
 volumes:
-  world:
-  world_nether:
-  world_the_end:
+  data:

@@ -59,11 +59,11 @@ if ! command -v $DOCKER_COMMAND >/dev/null; then
     exit 3
 fi
 
-versions=$(curl https://fill.papermc.io/v3/projects/paper/versions 2>/dev/null)
+versions=$(curl -fsSL https://fill.papermc.io/v3/projects/paper/versions)
 version_numbers=$(printf '%s' "$versions" | jq -r '.versions[].version.id' | cut -d '"' -f 2)
 
 for version_number in $version_numbers; do
-    builds=$(curl "https://fill.papermc.io/v3/projects/paper/versions/$version_number/builds" 2>/dev/null)
+    builds=$(curl -fsSL "https://fill.papermc.io/v3/projects/paper/versions/$version_number/builds")
     latest_stable_build=$(printf '%s' "$builds" | jq -c 'map(select(.channel == "STABLE")) | first // empty')
 
     if [ -z "$latest_stable_build" ]; then
@@ -88,8 +88,8 @@ for version_number in $version_numbers; do
         --build-arg="PAPER_ARGS=$recommended_flags" \
         --build-arg="PAPER_URL=$download_url" \
         -t "docker.io/robjdavey/minecraft-server:${version_number}${suffix}" \
-        "./$variant" &&
-        $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:${version_number}${suffix}"
+        "./$variant"
+    $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:${version_number}${suffix}"
 
     $DOCKER_COMMAND tag "docker.io/robjdavey/minecraft-server:${version_number}${suffix}" "docker.io/robjdavey/minecraft-server:latest${suffix}"
     $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:latest${suffix}"

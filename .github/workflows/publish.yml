@@ -72,7 +72,9 @@ jobs:
 
       # Ubuntu's podman package is too old for this Dockerfile (no ADD --checksum),
       # so run the build inside the official podman image instead. Logging in
-      # inside the container means the credentials are discarded with it.
+      # inside the container means the credentials are discarded with it, and
+      # base image pulls count towards the account's limit rather than the
+      # runner's shared IP address.
       - name: Build, test and push
         env:
           PODMAN_IMAGE: quay.io/podman/stable:v5.8.9@sha256:55d98815a34b8f796d9bc3130e7ea5eb070ec388c64124d12e876d07df8b7834
@@ -80,9 +82,10 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           VARIANT: ${{ matrix.variant }}
           VERSION: ${{ matrix.version }}
+          PULL_POLICY: missing
         run: |
           docker run --rm --privileged \
-            --env DOCKERHUB_USERNAME --env DOCKERHUB_TOKEN --env VARIANT --env VERSION \
+            --env DOCKERHUB_USERNAME --env DOCKERHUB_TOKEN --env VARIANT --env VERSION --env PULL_POLICY \
             --volume "$PWD:/src:ro" --workdir /src \
             "$PODMAN_IMAGE" \
             sh -c 'set -eu

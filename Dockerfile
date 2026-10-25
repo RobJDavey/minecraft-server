@@ -1,7 +1,6 @@
 ARG JAVA_VERSION=25
 ARG BASE_SUFFIX=""
-# A mirror of the Docker Hub official images, without Docker Hub's pull limits
-ARG BASE_REGISTRY=public.ecr.aws/docker/library
+ARG BASE_REGISTRY=docker.io/library
 
 FROM --platform=$BUILDPLATFORM ${BASE_REGISTRY}/eclipse-temurin:${JAVA_VERSION}${BASE_SUFFIX} AS build
 WORKDIR /opt/paper

@@ -4,6 +4,9 @@ set -euf
 
 DOCKER_COMMAND=${DOCKER_COMMAND:-podman}
 PLATFORMS=${PLATFORMS:-linux/amd64,linux/arm64}
+# CI starts with empty storage, so it uses "missing" to avoid extra registry
+# requests counting towards Docker Hub's pull limit
+PULL_POLICY=${PULL_POLICY:-always}
 REPOSITORY=docker.io/robjdavey/minecraft-server
 HUB_TAGS_URL=https://hub.docker.com/v2/namespaces/robjdavey/repositories/minecraft-server/tags
 PAPER_API=https://fill.papermc.io/v3/projects/paper
@@ -207,7 +210,7 @@ build() {
         $DOCKER_COMMAND rmi "$image" >/dev/null
     fi
 
-    $DOCKER_COMMAND build --pull -f ./Dockerfile \
+    $DOCKER_COMMAND build --pull="$PULL_POLICY" -f ./Dockerfile \
         --platform="$PLATFORMS" \
         --manifest="$image" \
         --build-arg="JAVA_VERSION=$java_version" \

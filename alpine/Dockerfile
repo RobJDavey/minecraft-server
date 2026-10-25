@@ -32,7 +32,7 @@ EXPOSE 25565
 ARG PAPER_ARGS
 ENV PAPER_ARGS=${PAPER_ARGS}
 ENV MEMORY=2048M
-ENTRYPOINT java -Xms${MEMORY} -Xmx${MEMORY} $PAPER_ARGS -jar paper.jar nogui
+ENTRYPOINT exec java -Xms${MEMORY} -Xmx${MEMORY} $PAPER_ARGS -jar paper.jar nogui
 
 ARG PAPER_BUILD
 LABEL com.robjdavey.minecraft.server.build="${PAPER_BUILD}"

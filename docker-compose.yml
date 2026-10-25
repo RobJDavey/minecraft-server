@@ -2,6 +2,7 @@ services:
   minecraft:
     image: robjdavey/minecraft-server:$SERVER_VERSION
     restart: unless-stopped
+    stop_grace_period: 1m
     environment:
       - TZ=Europe/London
     ports:

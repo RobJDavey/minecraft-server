@@ -47,6 +47,7 @@ for version_number in $version_numbers; do
     java_version=$(printf '%s' "$version_info" | jq -r '.version.java.version.minimum')
     latest_stable_build_id=$(printf '%s' "$latest_stable_build" | jq -r '.id')
     download_url=$(printf '%s' "$latest_stable_build" | jq -r '.downloads."server:default".url')
+    download_sha256=$(printf '%s' "$latest_stable_build" | jq -r '.downloads."server:default".checksums.sha256')
     recommended_flags=$(printf '%s' "$version_info" | jq -r '.version.java.flags.recommended | join(" ")')
 
     printf 'Building Minecraft %s with build %s on Java %s\n' "$version_number" "$latest_stable_build_id" "$java_version"
@@ -59,6 +60,7 @@ for version_number in $version_numbers; do
         --build-arg="PAPER_BUILD=$latest_stable_build_id" \
         --build-arg="PAPER_ARGS=$recommended_flags" \
         --build-arg="PAPER_URL=$download_url" \
+        --build-arg="PAPER_SHA256=$download_sha256" \
         -t "docker.io/robjdavey/minecraft-server:${version_number}${suffix}" \
         "./$variant"
     $DOCKER_COMMAND push "docker.io/robjdavey/minecraft-server:${version_number}${suffix}"

@@ -22,7 +22,8 @@ RUN groupadd -g ${GROUP_ID} ${GROUP_NAME} \
 USER ${USER_ID}:${GROUP_ID}
 WORKDIR /minecraft
 ARG PAPER_URL
-ADD --chown=${USER_ID}:${GROUP_ID} ${PAPER_URL} paper.jar
+ARG PAPER_SHA256
+ADD --checksum=sha256:${PAPER_SHA256} --chown=${USER_ID}:${GROUP_ID} ${PAPER_URL} paper.jar
 RUN java -jar paper.jar nogui \
     && echo eula=true > eula.txt
 EXPOSE 25565

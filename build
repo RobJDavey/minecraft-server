@@ -2,8 +2,8 @@
 
 set -euf
 
-DOCKER_COMMAND=podman
-PLATFORMS=linux/amd64,linux/arm64
+DOCKER_COMMAND=${DOCKER_COMMAND:-podman}
+PLATFORMS=${PLATFORMS:-linux/amd64,linux/arm64}
 export BUILDAH_FORMAT=docker
 
 variant=${1:-full}
@@ -17,11 +17,25 @@ case "$variant" in
         ;;
 esac
 
-# Start the image for the given platform with no network, wait for the server
-# to finish starting, then check it shuts down cleanly. Emulated platforms
-# start slowly, so allow up to 5 minutes.
+# Check the image for the given platform contains binaries for that CPU, then
+# start it with no network, wait for the server to finish starting, and check
+# it shuts down cleanly. Emulated platforms start slowly, so allow up to 5
+# minutes.
 smokeTest() {
     printf 'Smoke testing %s\n' "$2"
+
+    case "$2" in
+        linux/amd64) expected_arch=x86_64 ;;
+        linux/arm64) expected_arch=aarch64 ;;
+        *) expected_arch=unknown ;;
+    esac
+    actual_arch=$($DOCKER_COMMAND run --rm --platform "$2" --network none --entrypoint uname "$1" -m)
+
+    if [ "$actual_arch" != "$expected_arch" ]; then
+        echo "Smoke test failed: $2 image contains $actual_arch binaries"
+        return 1
+    fi
+
     container=$($DOCKER_COMMAND run -d --platform "$2" --network none -e MEMORY=1G "$1")
     started=false
 

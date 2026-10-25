@@ -1,0 +1,50 @@
+name: Publish
+
+on:
+  schedule:
+    # Every Monday at 06:00 UTC, to pick up new Paper builds and base image fixes
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.variant }}
+    runs-on: ubuntu-24.04
+    environment: docker-hub
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [full, alpine]
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install QEMU for building and testing arm64 images
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+
+      - name: Log in to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: printf '%s' "$DOCKERHUB_TOKEN" | podman login docker.io --username "$DOCKERHUB_USERNAME" --password-stdin
+
+      - name: Build, test and push
+        run: ./build ${{ matrix.variant }}
+
+      - name: Log out of Docker Hub
+        if: always()
+        run: podman logout docker.io || true

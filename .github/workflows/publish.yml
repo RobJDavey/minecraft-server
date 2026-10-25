@@ -36,15 +36,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-user-static
 
-      - name: Log in to Docker Hub
+      # Ubuntu's podman package is too old for this Dockerfile (no ADD --checksum),
+      # so run the build inside the official podman image instead. Logging in
+      # inside the container means the credentials are discarded with it.
+      - name: Build, test and push
         env:
+          PODMAN_IMAGE: quay.io/podman/stable:v5.8.9@sha256:55d98815a34b8f796d9bc3130e7ea5eb070ec388c64124d12e876d07df8b7834
           DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: printf '%s' "$DOCKERHUB_TOKEN" | podman login docker.io --username "$DOCKERHUB_USERNAME" --password-stdin
-
-      - name: Build, test and push
-        run: ./build ${{ matrix.variant }}
-
-      - name: Log out of Docker Hub
-        if: always()
-        run: podman logout docker.io || true
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          docker run --rm --privileged \
+            --env DOCKERHUB_USERNAME --env DOCKERHUB_TOKEN --env VARIANT \
+            --volume "$PWD:/src:ro" --workdir /src \
+            "$PODMAN_IMAGE" \
+            sh -c 'set -eu
+              dnf install -y -q jq
+              printf "%s" "$DOCKERHUB_TOKEN" | podman login docker.io --username "$DOCKERHUB_USERNAME" --password-stdin
+              ./build "$VARIANT"'

@@ -117,7 +117,7 @@ plan() {
 # start it with no network, wait for the server to finish starting, and check
 # it shuts down cleanly. The server gets a small flat world, because generating
 # a normal spawn area takes several minutes under emulation. Emulated platforms
-# still start slowly, so allow up to 5 minutes.
+# still start slowly, so allow up to 10 minutes to start and 2 minutes to stop.
 smokeTest() {
     printf 'Smoke testing %s\n' "$2"
 
@@ -141,7 +141,7 @@ smokeTest() {
     container=$($DOCKER_COMMAND run -d --pull=never --platform "$2" --network none -e MEMORY=1G --volume "$volume:/minecraft" "$1")
     started=false
 
-    for _ in $(seq 300); do
+    for _ in $(seq 600); do
         if $DOCKER_COMMAND logs "$container" 2>&1 | grep -q 'Done ('; then
             started=true
             break
@@ -152,7 +152,14 @@ smokeTest() {
         sleep 1
     done
 
-    $DOCKER_COMMAND stop -t 60 "$container" >/dev/null
+    # Let the first ticks finish before stopping. Stopping in the same second
+    # the server reports "Done" can make Paper's watchdog think the server has
+    # hung, and then it doesn't save the worlds.
+    if [ "$started" = "true" ]; then
+        sleep 30
+    fi
+
+    $DOCKER_COMMAND stop -t 120 "$container" >/dev/null
     logs=$($DOCKER_COMMAND logs "$container" 2>&1)
     $DOCKER_COMMAND rm -v "$container" >/dev/null
     $DOCKER_COMMAND volume rm "$volume" >/dev/null

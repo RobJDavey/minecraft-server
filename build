@@ -16,34 +16,6 @@ case "$variant" in
         ;;
 esac
 
-fullVersionNumber() {
-    major=$(echo "$1" | cut -d '.' -f 1)
-    minor=$(echo "$1" | cut -d '.' -f 2)
-    patch=$(echo "$1" | cut -d '.' -f 3)
-    patch=${patch:-0}
-    echo "$major.$minor.$patch"
-}
-
-recommendedJavaVersion() {
-    minor=$(echo "$1" | cut -d '.' -f 2)
-    patch=$(echo "$1" | cut -d '.' -f 3)
-    patch=${patch:-0}
-
-    if [ "$minor" = "13-pre7" ] 2>/dev/null; then
-        echo "8"
-    elif [ "$minor" -lt 12 ] 2>/dev/null; then
-        echo "8"
-    elif [ "$minor" -lt 16 ] 2>/dev/null; then
-        echo "11"
-    elif [ "$minor" -eq 16 ] 2>/dev/null && [ "$patch" -ne 5 ] 2>/dev/null; then
-        echo "11"
-    elif [ "$minor" -eq 16 ] 2>/dev/null && [ "$patch" -eq 5 ] 2>/dev/null; then
-        echo "16"
-    else
-        echo "21"
-    fi
-}
-
 if ! command -v curl >/dev/null; then
     echo "curl not installed"
     exit 1
@@ -60,7 +32,7 @@ if ! command -v $DOCKER_COMMAND >/dev/null; then
 fi
 
 versions=$(curl -fsSL https://fill.papermc.io/v3/projects/paper/versions)
-version_numbers=$(printf '%s' "$versions" | jq -r '.versions[].version.id' | cut -d '"' -f 2)
+version_numbers=$(printf '%s' "$versions" | jq -r '.versions[].version.id')
 
 for version_number in $version_numbers; do
     builds=$(curl -fsSL "https://fill.papermc.io/v3/projects/paper/versions/$version_number/builds")
@@ -71,11 +43,11 @@ for version_number in $version_numbers; do
         continue
     fi
 
-    version_info=$(printf '%s' "$versions" | jq ".versions | map(select(.version.id == \"$version_number\")) | .[0]")
+    version_info=$(printf '%s' "$versions" | jq --arg v "$version_number" 'first(.versions[] | select(.version.id == $v))')
     java_version=$(printf '%s' "$version_info" | jq -r '.version.java.version.minimum')
     latest_stable_build_id=$(printf '%s' "$latest_stable_build" | jq -r '.id')
     download_url=$(printf '%s' "$latest_stable_build" | jq -r '.downloads."server:default".url')
-    recommended_flags=$(printf '%s' "$version_info" | jq -r '.version.java.flags.recommended[]' | cut -d '"' -f 2 | tr '\n' ' ')
+    recommended_flags=$(printf '%s' "$version_info" | jq -r '.version.java.flags.recommended | join(" ")')
 
     printf 'Building Minecraft %s with build %s on Java %s\n' "$version_number" "$latest_stable_build_id" "$java_version"
 

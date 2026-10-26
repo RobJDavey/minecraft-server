@@ -2,10 +2,11 @@ name: Publish
 
 on:
   schedule:
-    # Every Monday at 06:00 UTC: build only versions with a new Paper build
-    - cron: '0 6 * * 1'
-    # The 1st of each month at 06:00 UTC: rebuild everything on fresh base images
-    - cron: '0 6 1 * *'
+    # Every day at 06:05 UTC: build only versions with a new Paper build. Not on
+    # the hour, because GitHub delays or drops scheduled runs at busy times.
+    - cron: '5 6 * * *'
+    # The 1st of each month at 06:05 UTC: rebuild everything on fresh base images
+    - cron: '5 6 1 * *'
   workflow_dispatch:
     inputs:
       rebuild_all:
@@ -42,8 +43,8 @@ jobs:
       - name: Work out which images need building
         id: plan
         env:
-          FORCE: ${{ github.event_name == 'push' || github.event.schedule == '0 6 1 * *' || inputs.rebuild_all == true }}
-          FORCE_REASON: ${{ github.event_name == 'push' && 'the image recipe changed on master' || github.event.schedule == '0 6 1 * *' && 'monthly rebuild on fresh base images' || 'manual rebuild requested' }}
+          FORCE: ${{ github.event_name == 'push' || github.event.schedule == '5 6 1 * *' || inputs.rebuild_all == true }}
+          FORCE_REASON: ${{ github.event_name == 'push' && 'the image recipe changed on master' || github.event.schedule == '5 6 1 * *' && 'monthly rebuild on fresh base images' || 'manual rebuild requested' }}
         run: |
           if [ "$FORCE" = "true" ]; then
             echo "Rebuilding everything: $FORCE_REASON"

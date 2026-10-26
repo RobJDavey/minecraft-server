@@ -77,7 +77,7 @@ The build needs `podman`, `curl` and `jq`. It checks the jar against Paper's pub
 
 GitHub Actions publishes the images:
 
-- **Every Monday:** builds only the images whose `<version>-<build>` tag isn't on Docker Hub yet.
+- **Every day:** builds only the images whose `<version>-<build>` tag isn't on Docker Hub yet. A run that finds nothing new finishes in seconds.
 - **On the 1st of each month:** rebuilds everything on fresh base images.
 - **On changes to the `Dockerfile`, `build` or the workflow:** rebuilds everything.
 - **Manually:** use **Run workflow** in the Actions tab, optionally with **Rebuild every version** ticked.
